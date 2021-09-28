@@ -14,9 +14,16 @@ namespace xbee {
         transmit // transmit frame
     } packet_t;
 
-    // generate a packet
-    // leave data NULL if vtx cmd
-    xbee_ret_t generate_packet(packet_t type, const char* data, size_t len);
+    // TODO not sure what the format of an address is yet
+    typedef struct {} addr_t;
+
+    // set the address of the XBEE to send to (transmits, remote commands)
+    void set_addr(addr_t* addr);
+
+    // generate an API frame
+    // leave data NULL if 'vtx_on' or 'vtx_off'
+    // if using 'transmit', send 'len' bytes at 'data'
+    xbee_ret_t generate_packet(packet_t type, const uint8_t* data, size_t len);
 
     // TODO receiving
     // some kind of parse packet
