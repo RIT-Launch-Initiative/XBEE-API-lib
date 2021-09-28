@@ -6,7 +6,7 @@ namespace xbee {
     typedef struct {
         const char* data;
         size_t size;
-    } api_frame_t;
+    } xbee_ret_t;
 
     typedef enum {
         vtx_on,  // video transmitter power ON
@@ -16,7 +16,7 @@ namespace xbee {
 
     // generate a packet
     // leave data NULL if vtx cmd
-    api_frame_t generate_packet(packet_t type, const char* data, size_t len);
+    xbee_ret_t generate_packet(packet_t type, const char* data, size_t len);
 
     // TODO receiving
     // some kind of parse packet
