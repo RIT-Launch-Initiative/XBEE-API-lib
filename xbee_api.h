@@ -4,7 +4,7 @@
 namespace xbee {
 
     typedef struct {
-        const char* data;
+        const uint8_t* data;
         size_t size;
     } xbee_ret_t;
 
@@ -12,7 +12,7 @@ namespace xbee {
         vtx_on,  // video transmitter power ON
         vtx_off, // video transmitter power OFF
         transmit // transmit frame
-    } packet_t;
+    } command_t;
 
     // TODO not sure what the format of an address is yet
     typedef struct {} addr_t;
@@ -23,7 +23,7 @@ namespace xbee {
     // generate an API frame
     // leave data NULL if 'vtx_on' or 'vtx_off'
     // if using 'transmit', send 'len' bytes at 'data'
-    xbee_ret_t generate_packet(packet_t type, const uint8_t* data, size_t len);
+    xbee_ret_t generate_packet(command_t cmd, const uint8_t* data, size_t len);
 
     // TODO receiving
     // some kind of parse packet
