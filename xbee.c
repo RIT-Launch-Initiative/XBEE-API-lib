@@ -29,7 +29,7 @@ typedef struct {
     xb_header_t header;
     uint8_t frame_type;
     uint8_t frame_id;
-    uint64_t dst_address_64;
+    uint64_t dst_addr;
     uint16_t reserved;
     uint8_t radius;
     uint8_t options;
@@ -38,7 +38,7 @@ typedef struct {
 typedef struct {
     xb_header_t header;
     uint8_t frame_type;
-    uint64_t src_address_64;
+    uint64_t src_addr;
     uint16_t reserved;
 } __attribute__((packed)) xb_rx_frame_t;
 
@@ -46,17 +46,17 @@ typedef struct {
     xb_header_t header;
     uint8_t frame_type;
     uint8_t frame_id;
-    uint64_t dst_address_64;
+    uint64_t dst_addr;
     uint16_t reserved;
     uint8_t options;
     uint8_t at_command[2];
 } __attribute__((packed)) xb_at_frame_t;
 
-int (*xb_write)(uint8_t *buf, size_t len);
+int (*xb_write)(uint8_t* buf, size_t len);
 void (*xb_delay)(uint32_t ms);
 
 static uint64_t default_dst = 0xFFFF000000000000; // broadcast address in network order
-static void (*rx_callback)(uint8_t *buff, size_t len);
+static void (*rx_callback)(uint8_t* buff, size_t len);
 
 static uint8_t tx_buff[TX_BUFF_SIZE];
 
@@ -64,15 +64,15 @@ xb_ret_t xb_send(uint8_t* data, size_t len) {
     return xb_sendto(default_dst, data, len);
 }
 
-xb_ret_t xb_sendto(uint64_t addr, uint8_t *data, size_t len) {
-    xb_tx_frame_t *frame = (xb_tx_frame_t *) tx_buff;
+xb_ret_t xb_sendto(uint64_t addr, uint8_t* data, size_t len) {
+    xb_tx_frame_t* frame = (xb_tx_frame_t*)tx_buff;
 
     frame->header.start_delimiter = START_DELIMETER;
     // length = payload + frame - header
     frame->header.length = hton16(len + sizeof(xb_tx_frame_t) - sizeof(xb_header_t));
     frame->frame_type = TX_FRAME_TYPE;
     frame->frame_id = 0;
-    frame->dst_address_64 = addr;
+    frame->dst_addr = addr;
     frame->reserved = RESERVED_VALUE;
     frame->radius = 0;
     frame->options = 0x80;
@@ -97,7 +97,7 @@ xb_ret_t xb_sendto(uint64_t addr, uint8_t *data, size_t len) {
     return XB_OK;
 }
 
-void xb_attach_rx_callback(void (*rx)(uint8_t *buff, size_t len)) {
+void xb_attach_rx_callback(void (*rx)(uint8_t* buff, size_t len)) {
     rx_callback = rx;
 }
 
@@ -105,7 +105,7 @@ void xb_attach_rx_callback(void (*rx)(uint8_t *buff, size_t len)) {
 #define RX_BUFF_SIZE 2048 // bytes
 static uint8_t rx_buff[RX_BUFF_SIZE];
 
-void xb_raw_recv(uint8_t *buff, size_t len) {
+void xb_raw_recv(uint8_t* buff, size_t len) {
     typedef enum {
         WAITING_FOR_FRAME,
         WAITING_FOR_LENGTH,
@@ -222,8 +222,8 @@ void xb_set_default_dst(uint64_t addr) {
     default_dst = hton64(addr);
 }
 
-static xb_ret_t xb_at_cmd(const char cmd[2], const char *param) {
-    xb_at_frame_t *frame = (xb_at_frame_t *) tx_buff;
+static xb_ret_t xb_at_cmd(const char cmd[2], const char* param) {
+    xb_at_frame_t* frame = (xb_at_frame_t*) tx_buff;
 
     size_t param_size = strlen(param);
 
@@ -232,7 +232,7 @@ static xb_ret_t xb_at_cmd(const char cmd[2], const char *param) {
     frame->header.length = hton16(sizeof(xb_at_frame_t) - sizeof(xb_header_t) + param_size);
     frame->frame_type = AT_CMD_FRAME_TYPE;
     frame->frame_id = 0;
-    frame->dst_address_64 = default_dst;
+    frame->dst_addr = default_dst;
     frame->reserved = hton16(0xFFFE);
     frame->options = 0x02; // apply changes immediately on remote
     frame->at_command[0] = cmd[0];
@@ -271,7 +271,7 @@ xb_ret_t xb_cmd_dio(xb_dio_t dio, xb_dio_output_t output) {
     }
 
     // TODO I'm not sure if the parameter is passed as ASCII or binary
-    char *param = "4";
+    char* param = "4";
     if(output == XB_DIO_HIGH) {
         param = "5";
     } // else low (4)
@@ -279,7 +279,7 @@ xb_ret_t xb_cmd_dio(xb_dio_t dio, xb_dio_output_t output) {
     return xb_at_cmd(cmd, param);
 }
 
-xb_ret_t xb_init(int (*write)(uint8_t *buf, size_t len), void (*delay)(uint32_t ms)) {
+xb_ret_t xb_init(int (*write)(uint8_t* buf, size_t len), void (*delay)(uint32_t ms)) {
     xb_write = write;
     xb_delay = delay;
 
@@ -294,7 +294,7 @@ xb_ret_t xb_init(int (*write)(uint8_t *buf, size_t len), void (*delay)(uint32_t 
     delay(1500);
 
     // send command to put into API mode
-    const char *at_cmd = "ATAP1\r"; // API mode without escapes
+    const char* at_cmd = "ATAP1\r"; // API mode without escapes
 
     if(xb_write((uint8_t*)at_cmd, 6) < 6) {
         // write failure
