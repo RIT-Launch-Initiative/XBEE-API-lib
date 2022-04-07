@@ -13,7 +13,8 @@
 #define START_DELIMETER   0x7E
 #define TX_FRAME_TYPE     0x10
 #define RX_FRAME_TYPE     0x90
-#define AT_CMD_FRAME_TYPE 0x17
+#define REMOTE_AT_CMD_FRAME_TYPE 0x17
+#define LOCAL_AT_CMD_FRAME_TYPE 0x08
 #define RESERVED_VALUE    0xFEFF // in network order
 
 // static buffer sizes
@@ -49,6 +50,13 @@ typedef struct {
     uint64_t dst_addr;
     uint16_t reserved;
     uint8_t options;
+    uint8_t at_command[2];
+} __attribute__((packed)) xb_remote_at_frame_t;
+
+typedef struct {
+    xb_header_t header;
+    uint8_t frame_type;
+    uint8_t frame_id;
     uint8_t at_command[2];
 } __attribute__((packed)) xb_at_frame_t;
 
@@ -222,16 +230,14 @@ void xb_set_default_dst(uint64_t addr) {
     default_dst = hton64(addr);
 }
 
-static xb_ret_t xb_at_cmd(const char cmd[2], const char* param) {
-    xb_at_frame_t* frame = (xb_at_frame_t*) tx_buff;
-
-    size_t param_size = strlen(param);
+static xb_ret_t xb_remote_at_cmd(const char cmd[2], uint8_t* param, size_t param_size) {
+    xb_remote_at_frame_t* frame = (xb_remote_at_frame_t*)tx_buff;
 
     frame->header.start_delimiter = START_DELIMETER;
     // length = frame - header + param
-    frame->header.length = hton16(sizeof(xb_at_frame_t) - sizeof(xb_header_t) + param_size);
-    frame->frame_type = AT_CMD_FRAME_TYPE;
-    frame->frame_id = 0;
+    frame->header.length = hton16(sizeof(xb_remote_at_frame_t) - sizeof(xb_header_t) + param_size);
+    frame->frame_type = REMOTE_AT_CMD_FRAME_TYPE;
+    frame->frame_id = 0; // NOTE: this means we won't get a response frame!
     frame->dst_addr = default_dst;
     frame->reserved = hton16(0xFFFE);
     frame->options = 0x02; // apply changes immediately on remote
@@ -239,11 +245,11 @@ static xb_ret_t xb_at_cmd(const char cmd[2], const char* param) {
     frame->at_command[1] = cmd[1];
 
     // copy parameter
-    memcpy(tx_buff + sizeof(xb_at_frame_t), param, param_size);
+    memcpy(tx_buff + sizeof(xb_remote_at_frame_t), param, param_size);
 
     uint8_t check = 0;
     size_t i;
-    for(i = sizeof(xb_header_t); i < sizeof(xb_at_frame_t) + param_size; i++) {
+    for(i = sizeof(xb_header_t); i < sizeof(xb_remote_at_frame_t) + param_size; i++) {
         check += tx_buff[i];
     }
 
@@ -256,6 +262,58 @@ static xb_ret_t xb_at_cmd(const char cmd[2], const char* param) {
 
     return XB_OK;
 }
+
+xb_ret_t xb_at_cmd(const char cmd[2], uint8_t* param, size_t param_size) {
+    xb_at_frame_t* frame = (xb_at_frame_t*)tx_buff;
+
+    frame->header.start_delimiter = START_DELIMETER;
+    frame->header.length = hton16(sizeof(xb_at_frame_t) - sizeof(xb_header_t) + param_size);
+    frame->frame_type = LOCAL_AT_CMD_FRAME_TYPE;
+    frame->frame_id = 0;
+    frame->at_command[0] = cmd[0];
+    frame->at_command[1] = cmd[1];
+
+    // copy parameter
+    memcpy(tx_buff + sizeof(xb_remote_at_frame_t), param, param_size);
+
+    uint8_t check = 0;
+    size_t i;
+    for(i = sizeof(xb_header_t); i < sizeof(xb_remote_at_frame_t) + param_size; i++) {
+        check += tx_buff[i];
+    }
+
+    tx_buff[i] = 0xFF - check;
+
+    if(xb_write(tx_buff, i + 1) < i + 1) {
+        // write error
+        return XB_ERR;
+    }
+
+    return XB_OK;
+}
+
+xb_ret_t xb_cmd_remote_dio(xb_dio_t dio, xb_dio_output_t output) {
+    char cmd[2];
+
+    switch(dio) {
+        case XB_DIO12:
+            // P2
+            cmd[0] = 'P';
+            cmd[1] = '2';
+            break;
+        default:
+            return XB_ERR;
+    }
+
+    // parameter passed as binary
+    uint8_t param = 0x04;
+    if(output == XB_DIO_HIGH) {
+        param = 0x05;
+    } // else low (4)
+
+    return xb_remote_at_cmd(cmd, &param, 1);
+}
+
 
 xb_ret_t xb_cmd_dio(xb_dio_t dio, xb_dio_output_t output) {
     char cmd[2];
@@ -270,18 +328,34 @@ xb_ret_t xb_cmd_dio(xb_dio_t dio, xb_dio_output_t output) {
             return XB_ERR;
     }
 
-    // TODO I'm not sure if the parameter is passed as ASCII or binary
-    char* param = "4";
+    // parameter passed as binary
+    uint8_t param = 0x04;
     if(output == XB_DIO_HIGH) {
-        param = "5";
+        param = 0x05;
     } // else low (4)
 
-    return xb_at_cmd(cmd, param);
+    return xb_at_cmd(cmd, &param, 1);
+}
+
+xb_ret_t xb_set_net_id(uint16_t id) {
+    char cmd[2] = {'I', 'D'};
+
+    if(id > 0x7FFF) {
+        // invalid ID
+        return XB_ERR;
+    }
+
+    uint16_t param = hton16(id);
+    return xb_at_cmd(cmd, (uint8_t*)&param, sizeof(uint16_t));
 }
 
 xb_ret_t xb_init(int (*write)(uint8_t* buf, size_t len), void (*delay)(uint32_t ms)) {
     xb_write = write;
     xb_delay = delay;
+
+    // the line should be silent for 1s
+    // wait for 1.1s to be safe
+    delay(1100);
 
     // enter command mode
     if(xb_write((uint8_t*)"+++", 3) < 3) {
@@ -290,8 +364,8 @@ xb_ret_t xb_init(int (*write)(uint8_t* buf, size_t len), void (*delay)(uint32_t 
     }
 
     // the line should be silent for 1s
-    // wait for 1.5s to be safe
-    delay(1500);
+    // wait for 1.1s to be safe
+    delay(1100);
 
     // send command to put into API mode
     const char* at_cmd = "ATAP1\r"; // API mode without escapes

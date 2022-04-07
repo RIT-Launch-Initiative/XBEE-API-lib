@@ -20,9 +20,7 @@ typedef enum {
 // init function
 // 'write' is a function that the API will use to output data to the XBee
 // 'delay' is a function that delays for a given amount of milliseconds
-// NOTE: places the XBee in API mode,
-//       this function must be called within 1s of power up or the XBee
-//       cannot be commanded to API mode
+// NOTE: places the XBee in API mode
 xb_ret_t xb_init(int (*write) (uint8_t* buff, size_t len), void (*delay)(uint32_t ms));
 
 /*
@@ -62,6 +60,11 @@ xb_ret_t xb_sendto(uint64_t addr, uint8_t* data, size_t len);
 // transmit data to default destination
 xb_ret_t xb_send(uint8_t* data, size_t len);
 
+// set network ID, valid IDs range from 0 to 0x7FFF
+// devices on the same network ID are allowed to communicate with eachother
+// NOTE: netid assumed to be in system endianness
+xb_ret_t xb_set_net_id(uint16_t id);
+
 typedef enum {
     XB_DIO12
 } xb_dio_t;
@@ -72,6 +75,9 @@ typedef enum {
 } xb_dio_output_t;
 
 // remotely command digital I/O
+xb_ret_t xb_cmd_remote_dio(xb_dio_t dio, xb_dio_output_t output);
+
+// command local digital I/O
 xb_ret_t xb_cmd_dio(xb_dio_t dio, xb_dio_output_t output);
 
 #endif
