@@ -274,16 +274,17 @@ xb_ret_t xb_at_cmd(const char cmd[2], uint8_t* param, size_t param_size) {
     frame->at_command[1] = cmd[1];
 
     // copy parameter
-    memcpy(tx_buff + sizeof(xb_remote_at_frame_t), param, param_size);
+    memcpy(tx_buff + sizeof(xb_at_frame_t), param, param_size);
 
     uint8_t check = 0;
     size_t i;
-    for(i = sizeof(xb_header_t); i < sizeof(xb_remote_at_frame_t) + param_size; i++) {
+    for(i = sizeof(xb_header_t); i < sizeof(xb_at_frame_t) + param_size; i++) {
         check += tx_buff[i];
     }
 
     tx_buff[i] = 0xFF - check;
 
+    printf("%p\n", tx_buff);
     if(xb_write(tx_buff, i + 1) < i + 1) {
         // write error
         return XB_ERR;
