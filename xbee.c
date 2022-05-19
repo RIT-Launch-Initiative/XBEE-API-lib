@@ -109,11 +109,10 @@ void xb_attach_rx_callback(void (*rx)(uint8_t* buff, size_t len)) {
     rx_callback = rx;
 }
 
-
 #define RX_BUFF_SIZE 2048 // bytes
 static uint8_t rx_buff[RX_BUFF_SIZE];
 
-void xb_raw_recv(uint8_t* buff, size_t len) {
+void xb_rx_complete(xb_rx_request* req) {
     typedef enum {
         WAITING_FOR_FRAME,
         WAITING_FOR_LENGTH,
@@ -121,20 +120,23 @@ void xb_raw_recv(uint8_t* buff, size_t len) {
         WAIT_FOR_FRAME_END
     } state_t;
 
-    static size_t rx_index = 0;
+    static size_t rx_index;
     static size_t to_read; // bytes left of payload to read
     static size_t payload_size;
 
     static state_t state = WAITING_FOR_FRAME;
     static uint8_t check = 0;
 
+    uint8_t len_buff[2];
+
     size_t i = 0;
+
 
     start_switch:
     switch(state) {
         case WAITING_FOR_FRAME:
-            for(; i < len; i++) {
-                if(buff[i] == START_DELIMETER) {
+            for(; i < req->len; i++) {
+                if(req->buff[i] == START_DELIMETER) {
                     state = WAITING_FOR_LENGTH;
                     rx_index = 0;
                     i++;
@@ -143,41 +145,38 @@ void xb_raw_recv(uint8_t* buff, size_t len) {
             }
 
             if(state == WAITING_FOR_FRAME) {
+                // we didn't get a delimter, don't save anything from our buffer
+                req->len = 3;
+                req->buff = rx_buff;
                 break;
             } // otherwise start parsing header
 
         case WAITING_FOR_LENGTH:
-            for(; i < len; i++) {
-                rx_buff[rx_index] = buff[i];
+            for(; i < req->len; i++) {
+                len_buff[rx_index] = req->buff[i];
                 rx_index++;
                 if(rx_index == 2) {
-                    i++;
-                    payload_size = ntoh16(*((uint16_t*)rx_buff));
+                    payload_size = ntoh16(*((uint16_t*)len_buff));
                     to_read = payload_size + 1; // read checksum too
-
-                    // TODO maybe just get rid of this and read all kinds of frames
-                    // then decide which callback to call based on frame id
-                    // if(rx_buff[2] != RX_FRAME_TYPE) {
-                    //     // wait for this frame to finish
-                    //     state = WAIT_FOR_FRAME_END;
-                    //     goto start_switch; // gross
-                    // }
 
                     // start writing over the buffer again, already stored length
                     rx_index = 0;
 
                     state = READING_PAYLOAD;
+                    i++;
                     break; // don't need to keep reading header
                 }
             }
 
             if(state == WAITING_FOR_LENGTH) {
+                req->len = 2 - rx_index;
+                req->buff = rx_buff;
                 break;
             }
 
         case READING_PAYLOAD:
-            for(; i < len; i++) {
-                rx_buff[rx_index++] = buff[i];
+            for(; i < req->len; i++) {
+                rx_index++;
                 to_read--;
 
                 if(to_read == 0) {
@@ -201,19 +200,22 @@ void xb_raw_recv(uint8_t* buff, size_t len) {
                     state = WAITING_FOR_FRAME;
                     goto start_switch;
                 } else {
-                    check += buff[i];
+                    check += req->buff[i];
                 }
-
 
                 if(rx_index == RX_BUFF_SIZE) {
                     // can't read anymore, throw away packet
+                    check = 0;
                     state = WAIT_FOR_FRAME_END;
                     goto start_switch;
                 }
             }
+
+            req->len = to_read;
+            req->buff = rx_buff + rx_index;
             break; // should immediately fail next loop anyways
         case WAIT_FOR_FRAME_END:
-            for(; i < len; i++) {
+            for(; i < req->len; i++) {
                 // do nothing
                 to_read--;
 
@@ -274,17 +276,16 @@ xb_ret_t xb_at_cmd(const char cmd[2], uint8_t* param, size_t param_size) {
     frame->at_command[1] = cmd[1];
 
     // copy parameter
-    memcpy(tx_buff + sizeof(xb_at_frame_t), param, param_size);
+    memcpy(tx_buff + sizeof(xb_remote_at_frame_t), param, param_size);
 
     uint8_t check = 0;
     size_t i;
-    for(i = sizeof(xb_header_t); i < sizeof(xb_at_frame_t) + param_size; i++) {
+    for(i = sizeof(xb_header_t); i < sizeof(xb_remote_at_frame_t) + param_size; i++) {
         check += tx_buff[i];
     }
 
     tx_buff[i] = 0xFF - check;
 
-    printf("%p\n", tx_buff);
     if(xb_write(tx_buff, i + 1) < i + 1) {
         // write error
         return XB_ERR;

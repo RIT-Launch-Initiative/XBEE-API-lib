@@ -23,27 +23,16 @@ typedef enum {
 // NOTE: places the XBee in API mode
 xb_ret_t xb_init(int (*write) (uint8_t* buff, size_t len), void (*delay)(uint32_t ms));
 
-/*
-// TODO move to a way that exposes underlying buffer so it can be directly written to
-// buffer to copy received data into (up to recv_free bytes)
-
-extern uint8_t* recv_buffer;
-extern size_t recv_free;
-
-
-// request a buffer of 'len' bytes to write received data into
-// a subsequent call to 'xb_rx_parse' will parse the latest data in the buffer
-uint8_t* xb_rx_buff(size_t len)
+// receive request
+// used by the XBee to request data
+typedef struct {
+    size_t len;
+    uint8_t* buff;
+} xb_rx_request;
 
 // function that should be called when any data is received from the XBee (either over serial or SPI)
 // needs to be called by lower layer
-// parses the data in the last call to 'xb_rx_buff'
-void xb_rx_parse();
-*/
-
-// function that should be called when any data is received from the XBee (either over serial or SPI)
-// needs to be called by lower layer
-void xb_raw_recv(uint8_t* buff, size_t len);
+void xb_rx_complete(xb_rx_request* req);
 
 // attach a callback function to call when an rx frame is received
 // 'buff' points to the payload of length 'len' in the frame
